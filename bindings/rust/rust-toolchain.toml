@@ -1,0 +1,5 @@
+# Pinned so a byte-equality run is reproducible: the same toolchain that
+# builds the e2e contract workspace builds this crate.
+[toolchain]
+channel = "1.93.0"
+components = ["rustfmt", "clippy"]

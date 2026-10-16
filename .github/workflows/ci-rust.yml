@@ -1,0 +1,50 @@
+# Rust crate: byte-equal replay of every golden vector, error distinctions,
+# and a clean clippy/fmt gate.
+#
+# Runs when the crate, the vectors, or the harness it shares a pin with
+# changes.
+name: ci / rust
+
+on:
+  # Advisory checks do not run on pull requests. Only the two jobs the
+  # branch ruleset requires do, so a contributor sees two checks and not a
+  # wall of them. These run when the change reaches main, and can be run
+  # by hand from the Actions tab at any time.
+  push:
+    branches: [main]
+    paths:
+      - "bindings/rust/**"
+      - "testdata/vectors/**"
+      - "testdata/parity-rust/**"
+      # A workflow's own definition is in its paths, so an edit to this
+      # file re-runs it. Without this line a change to this workflow
+      # cannot validate itself.
+      - ".github/workflows/ci-rust.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    name: rust crate over the signing core
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      # rustup installs the pinned toolchain (1.93.0, what the parity
+      # harness pins) with no action to pin: the toolchain file in the
+      # crate directory selects it.
+      - name: install the pinned toolchain
+        run: |
+          curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs -o /tmp/rustup.sh
+          sh /tmp/rustup.sh -y --profile minimal
+          echo "$HOME/.cargo/bin" >> "$GITHUB_PATH"
+      - name: golden replay with byte equality
+        working-directory: bindings/rust
+        run: cargo test --locked
+      - name: clippy
+        working-directory: bindings/rust
+        run: cargo clippy --locked --all-targets -- -D warnings
+      - name: formatting
+        working-directory: bindings/rust
+        run: cargo fmt --check
