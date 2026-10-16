@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>soroauth + Freighter example</title>
+  </head>
+  <body>
+    <h1>Sign an authorization entry with Freighter</h1>
+    <p>
+      Status: <span id="status">needs an entry and a wallet</span>
+    </p>
+    <label>
+      Unsigned entry (base64, from record-mode simulation):
+      <textarea id="entry" rows="4" cols="80"></textarea>
+    </label>
+    <br />
+    <button id="sign">Sign with Freighter</button>
+    <pre id="output"></pre>
+    <!-- The extension API and the wasm wrapper load from their published
+      versions (see README.md for which were tested); the flow itself lives
+      in app.js and is checked by app.test.mjs without a browser. -->
+    <script src="https://esm.sh/@stellar/freighter-api@4.1.0"></script>
+    <script src="./wasm_exec.js"></script>
+    <script type="module">
+      import { loadSoroauth } from "./soroauth-wasm.js";
+      import { signWithFreighter } from "./app.js";
+
+      const status = document.getElementById("status");
+      const output = document.getElementById("output");
+
+      document.getElementById("sign").addEventListener("click", async () => {
+        status.textContent = "loading…";
+        try {
+          const soroauth = await loadSoroauth({ wasm: "./soroauth.wasm", go: globalThis.Go });
+          const verifyEntry = async (signedEntryXdr, networkPassphrase) => {
+            const res = await fetch("/verify", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ entry: signedEntryXdr, network: networkPassphrase }),
+            });
+            return res.json();
+          };
+          const { signedEntryXdr } = await signWithFreighter({
+            wallet: globalThis.freighterApi,
+            soroauth,
+            verifyEntry,
+            entryXdr: document.getElementById("entry").value.trim(),
+            validUntilLedger: Number(new URLSearchParams(location.search).get("validUntil") || "0"),
+            networkPassphrase: "Test SDF Network ; September 2015",
+            address: new URLSearchParams(location.search).get("address") || "",
+          });
+          // Still required: re-simulate in enforce mode with the signed
+          // entry, re-assemble, and submit. See the README.
+          status.textContent = "signed — now run the enforce pass";
+          output.textContent = signedEntryXdr;
+        } catch (err) {
+          status.textContent = `failed: ${err.code || err.name}: ${err.message}`;
+        }
+      });
+    </script>
+  </body>
+</html>

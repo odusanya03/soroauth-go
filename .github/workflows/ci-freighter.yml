@@ -1,0 +1,42 @@
+# Freighter / Stellar Wallets Kit example: the logic check that runs
+# without a browser or a wallet extension.
+#
+# Runs when the example, the wallet adapter, or the wasm wrapper it
+# connects changes.
+name: ci / freighter
+
+on:
+  # Advisory checks do not run on pull requests. Only the two jobs the
+  # branch ruleset requires do, so a contributor sees two checks and not a
+  # wall of them. These run when the change reaches main, and can be run
+  # by hand from the Actions tab at any time.
+  push:
+    branches: [main]
+    paths:
+      - "examples/wallet-freighter/**"
+      - "adapters/walletsdk/**"
+      - "wasm/ts/**"
+      # A workflow's own definition is in its paths, so an edit to this
+      # file re-runs it. Without this line a change to this workflow
+      # cannot validate itself.
+      - ".github/workflows/ci-freighter.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  freighter:
+    name: freighter example logic
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: "22"
+      # No browser and no wallet extension exist here, so this runs
+      # everything about the example that does not need them: the
+      # error classification, the wrong-network detection, and the
+      # verify-before-use gate.
+      - name: example logic check
+        run: node examples/wallet-freighter/app.test.mjs

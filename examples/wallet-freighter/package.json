@@ -1,0 +1,14 @@
+{
+  "name": "soroauth-wallet-freighter-example",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Working example signing a Soroban authorization entry through Freighter / Stellar Wallets Kit.",
+  "type": "module",
+  "scripts": {
+    "test": "node app.test.mjs"
+  },
+  "dependencies": {
+    "@soroauth/wasm": "0.1.0",
+    "@stellar/freighter-api": "4.1.0"
+  }
+}
