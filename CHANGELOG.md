@@ -775,6 +775,47 @@ this project adheres to
   **Migration:** none required. Public API unchanged; no emitted signature or
   entry bytes change — all nine golden vectors pass byte-for-byte.
 
+- A gRPC signing and verification service over the operations the HTTP service
+  already exposes, with a published protobuf schema in
+  `integrations/grpc/proto/soroauth.proto` and generated code checked by CI to
+  be in sync with it. Parity tests assert the gRPC and HTTP surfaces return
+  equivalent results for the same inputs, deadlines and cancellation propagate
+  to the signer, and the honesty boundaries survive the schema: `cannot_check`
+  is a distinct enum value, not a false. It is a module of its own so the root
+  module stays thin, and — like the HTTP reference — it has no authentication of
+  its own: the bearer-token interceptor shape an operator must add is stated in
+  its README rather than deferred. (#343)
+
+- A Stellar Wallets Kit / Freighter integration connecting `adapters/walletsdk`
+  and `wasm/ts` instead of adding a third piece. `walletsdk.SignViaFreighter`
+  signs through a wallet extension and verifies what comes back against the
+  golden-vector path before handing it out; rejection, a locked wallet and a
+  wrong network are distinct errors, and a wallet that signs for a different
+  network is caught by the passphrase check rather than trusted.
+  `examples/wallet-freighter` is the working page with the flow documented end
+  to end, and `docs/browser.md` gains the wallet flow alongside the passkey one.
+  (#342)
+
+- A Rust crate over the signing core (`bindings/rust`), natively implemented
+  rather than bound over the C ABI — a deliberate choice stated in its README,
+  so the parity harness is the correctness gate from the start. It decodes with
+  the same pinned `stellar-xdr =28.0.0` the host uses (exact pin, committed
+  lockfile, `--locked` enforced, refused at runtime otherwise), carries
+  `#![forbid(unsafe_code)]`, and replays every golden vector with byte equality
+  in CI, including the 20-key multisig vector and the depth-57 delegate chain.
+  Error variants mirror the Go sentinels; verification keeps four verdicts,
+  never a boolean. (#341)
+
+- A Java/JVM binding (`org.soroauth:soroauth-jvm`) in pure JVM code, so the
+  published artifact installs without a local Go or Rust toolchain. The C ABI
+  issue is still open, which is stated on the record: the signing path does not
+  wait for it, and the native surface is exactly two symbols, enough to prove
+  the Linux/macOS bundling, the selection mechanism, and the Foreign Function
+  and Memory API marshalling (minimum JDK 22, JNI not used). Golden vectors
+  replay through the JVM API in CI with byte equality asserted, and the
+  exceptions carry the Go sentinels' distinctions with a refusal/fault kind on
+  each. (#340)
+
 ## [0.1.0] — 2026-09-16
 
 First release. Unaudited.

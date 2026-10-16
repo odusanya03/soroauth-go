@@ -43,7 +43,7 @@ FUZZTIME ?= 30s
 # soak is not a replacement for it.
 SOAKTIME ?= 2m
 
-.PHONY: all help fmt vet test coverage fuzz soak build server man md-check md-format vectors vectors-check demo-check diagrams diagrams-check e2e clean parity parity-rust differential wasm wasm-check wasm-budget ts-test
+.PHONY: all help fmt vet test coverage fuzz soak build server man md-check md-format vectors vectors-check demo-check diagrams diagrams-check e2e clean parity parity-rust differential wasm wasm-check wasm-budget ts-test jvm-test jvm-native rust-test grpc-test grpc-check freighter-check
 
 # The default target runs exactly what a pull request has to pass before the
 # golden-vector drift check, which needs Node and the network.
@@ -76,6 +76,12 @@ help:
 	@echo "  make wasm-check    build the wasm core and prove it matches the golden, differential and fuzz corpora"
 	@echo "  make wasm-budget   build the wasm core and fail if it is over its size ceiling"
 	@echo "  make ts-test       typecheck and test the TypeScript wrapper package"
+	@echo "  make jvm-test      test the JVM binding (golden replay, exceptions, loader)"
+	@echo "  make jvm-native    build the JVM native library, then test with the FFM binding live"
+	@echo "  make rust-test     test the Rust crate with its pins locked"
+	@echo "  make grpc-test     test the gRPC service module"
+	@echo "  make grpc-check    lint the proto and fail if the generated code drifted"
+	@echo "  make freighter-check  check the Freighter example's logic without a browser"
 	@echo "  make clean         remove $(BIN_DIR)/ and build output"
 
 # gofmt -l prints the files that need formatting; this target turns that output
@@ -278,6 +284,44 @@ wasm-check: wasm
 
 ts-test: wasm
 	cd wasm/ts && $(NPM) ci && $(NPM) run typecheck && $(NPM) test
+
+# The JVM binding (bindings/jvm): the golden vectors replayed through the
+# JVM API with byte equality, the exception distinctions, and the native
+# selection mechanism. Needs Maven and JDK 22+, the binding's stated
+# minimum; no Go or Rust toolchain beyond what the checkout already needs.
+jvm-test:
+	cd bindings/jvm && mvn -B test
+
+# jvm-test plus the FFM binding live: builds the native library for the
+# host platform into the resources tree first, so NativeSoroauthTest links
+# it instead of skipping. Needs a C toolchain for cgo.
+jvm-native:
+	cd bindings/jvm/native && ./build.sh
+	cd bindings/jvm && mvn -B test
+
+# The Rust crate (bindings/rust): every golden vector with byte equality,
+# against the locked pins. Needs Rust 1.93.0 (rustup fetches it from
+# bindings/rust/rust-toolchain.toml).
+rust-test:
+	cd bindings/rust && cargo test --locked
+
+# The gRPC service (integrations/grpc): parity with the HTTP surfaces, the
+# honesty boundary, and deadline propagation. A module of its own, so this
+# runs in its directory rather than under the root ./....
+grpc-test:
+	cd integrations/grpc && $(GO) vet ./... && $(GO) test -race ./...
+
+# The schema sync gate: buf lint plus regeneration, failing when the
+# committed gen/ differs from what the schema produces. Needs buf and the
+# pinned protoc-gen-go plugins (see integrations/grpc/generate.sh).
+grpc-check:
+	cd integrations/grpc && buf lint && ./generate.sh && git diff --exit-code -- gen/
+
+# The Freighter example's logic (examples/wallet-freighter): classification,
+# wrong-network detection, and the verify-before-use gate. Needs only Node;
+# no browser and no wallet extension.
+freighter-check:
+	$(NODE) examples/wallet-freighter/app.test.mjs
 
 # Builds the module and measures it against the 3 MiB ceiling, failing if it is
 # over. The core is downloaded by a browser, so its size is a property worth

@@ -116,6 +116,47 @@ What this snippet deliberately leaves out, and where it lives:
 - **`authorizeWithSeed`** (deterministic ed25519 signing from a raw seed) is for
   local tests and demos only — never ship a seed to a browser.
 
+## Signing with Freighter / Stellar Wallets Kit
+
+The passkey flow above is the case where the browser itself is the signer. The
+far more common browser case is a user with Freighter installed: the dapp
+derives the payload locally with this same package, the wallet signs it, and the
+result is verified before use. This connects `adapters/walletsdk` and `wasm/ts`
+rather than adding a third piece.
+
+```ts
+// The payload is derived locally, exactly as in the passkey snippet.
+const { payloadHex } = soroauth.preimage(entryBase64Xdr, validUntilLedger, networkPassphrase);
+
+// The extension signs; the receipt carries what it claims it signed for.
+const receipt = await freighterApi.signAuthEntry(entryBase64Xdr, {
+  validUntil: validUntilLedger,
+  networkPassphrase,
+  address,
+  payloadHex,
+});
+
+// The wallet's output is checked, not assumed: verify the signed entry
+// under the expected passphrase (here via the verification service; in Go
+// with walletsdk.SignViaFreighter) before running the enforce pass.
+const report = await verifyEntry(receipt.signedAuthEntry, networkPassphrase);
+if (!report.verified) {
+  // Rejection, a locked wallet and a wrong network are distinct, handled
+  // states — see the example. A signature for a different network is
+  // caught here by the passphrase check, never trusted.
+  throw new Error(`wallet result did not verify: ${JSON.stringify(report.nodes)}`);
+}
+```
+
+[`examples/wallet-freighter`](../examples/wallet-freighter/README.md) is the
+working page for this flow, with the three states handled and the enforce pass
+still ahead of it. Its `app.test.mjs` checks the classification, the
+wrong-network detection and the verify-before-use gate without a browser; its
+README states plainly which wallet versions that page was written against and
+what a live extension run still has to record. The Go half of the same states is
+`walletsdk.SignViaFreighter`, whose tests replay a golden vector through a
+wallet stub and assert byte-identical output.
+
 ## The demo
 
 [`examples/browser-passkey`](../examples/browser-passkey/README.md) is a
