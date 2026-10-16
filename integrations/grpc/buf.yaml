@@ -1,0 +1,17 @@
+version: v2
+modules:
+  - path: proto
+lint:
+  use:
+    - DEFAULT
+  except:
+    # One file at proto/soroauth.proto rather than a soroauth/v1 directory
+    # tree: the schema is a single service and the layout mirrors the Go
+    # module around it.
+    - PACKAGE_DIRECTORY_MATCH
+    # Short enum values (VERIFIED, CANNOT_CHECK) that read like the Go
+    # VerifyVerdict strings and the JSON surfaces they mirror.
+    - ENUM_VALUE_PREFIX
+breaking:
+  use:
+    - FILE

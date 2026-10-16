@@ -1,0 +1,108 @@
+syntax = "proto3";
+
+// The soroauth signing and verification service.
+//
+// This schema is the machine-readable statement of the same contract the
+// HTTP surfaces already expose: remote/protocol.go (the signing protocol the
+// remote.Server speaks) and the POST /verify shape server/main.go serves.
+// The .proto is the source of truth; gen/ is produced from it with
+// protoc-gen-go and protoc-gen-go-grpc (see generate.sh), and CI fails if
+// the two drift apart.
+//
+// Honesty boundary, stated once so no field can erode it: verification
+// reports a Verdict per credential node, and CANNOT_CHECK is a distinct
+// value, never a false. A client that wants a boolean must map the enum
+// itself and say what it did with CANNOT_CHECK.
+package soroauth.v1;
+
+option go_package = "github.com/soroauth/soroauth-go/integrations/grpc/gen;soroauthv1";
+
+// Verdict is one credential node's offline verification outcome. The four
+// values are the four soroauth.VerifyVerdict strings, so a gRPC report and
+// the HTTP /verify body name the same outcomes.
+enum Verdict {
+  // The sender left the field unset. Responses never carry this; a client
+  // that sees it is reading a message from a newer schema.
+  VERDICT_UNSPECIFIED = 0;
+  // The node carries a classic account signature that verifies over the
+  // payload the entry commits to.
+  VERIFIED = 1;
+  // The node carries no signature (Void or an empty vector). Under CAP-71-01
+  // a delegates entry may legitimately leave its top-level node Void.
+  UNSIGNED = 2;
+  // The node carries a classic account signature that does not verify.
+  INVALID = 3;
+  // The node's signature is not the built-in account shape (a custom
+  // account's __check_auth defines its own), so offline code cannot decide
+  // it. Never reported as verified, never collapsed into a boolean false.
+  CANNOT_CHECK = 4;
+}
+
+// SignRequest asks the service to sign one authorization entry.
+//
+// entry is the base64 XDR SorobanAuthorizationEntry as simulation returned
+// it in record mode. valid_until_ledger is the absolute expiration ledger
+// the signature commits to. network is testnet, futurenet, public, or a
+// literal network passphrase. address names the credential node the
+// signature belongs to, the same target soroauth.AuthorizeEntry takes.
+message SignRequest {
+  string entry = 1;
+  uint32 valid_until_ledger = 2;
+  string network = 3;
+  string address = 4;
+}
+
+// SignResponse carries the signed entry back.
+message SignResponse {
+  // The base64 XDR of the entry with the signature written onto every
+  // credential node whose address equals the request's address.
+  string signed_entry = 1;
+}
+
+// NodeVerdict is the verification outcome for one credential node.
+message NodeVerdict {
+  string address = 1;
+  Verdict verdict = 2;
+  // Why, in plain language, when the verdict is not VERIFIED.
+  string reason = 3;
+}
+
+// VerifyRequest asks the service to check an entry's signatures without
+// submitting anything.
+message VerifyRequest {
+  // The base64 XDR authorization entry to check, as it stands.
+  string entry = 1;
+  // testnet, futurenet, public, or a literal network passphrase.
+  string network = 2;
+  // An optional assertion of the expiration the entry carries. The payload
+  // is always rebuilt from the entry's own stored expiration; a
+  // disagreement is an error, never an override.
+  uint32 valid_until_ledger = 3;
+}
+
+// VerifyResponse is one entry's verification report. Its fields mirror the
+// HTTP /verify body and the soroauth.VerificationReport struct, so a client
+// parses one schema for every surface.
+message VerifyResponse {
+  string credential_type = 1;
+  bool address_bound = 2;
+  string address = 3;
+  uint32 valid_until_ledger = 4;
+  // True only when every node verified. Unsigned, invalid and
+  // cannot-check nodes all make it false: verification fails closed.
+  bool verified = 5;
+  repeated NodeVerdict nodes = 6;
+  string note = 7;
+}
+
+// SoroauthService signs authorization entries and verifies the signatures
+// already on them. It holds keys the way remote.Server does: the process
+// running it holds them, and authentication, rate limiting and TLS are the
+// operator's concern (see README.md). Deadlines and cancellation on the
+// caller's context propagate to the signer; a cancelled call fails with a
+// CANCELLED or DEADLINE_EXCEEDED status and the signer is not invoked
+// afterwards.
+service SoroauthService {
+  rpc Sign(SignRequest) returns (SignResponse);
+  rpc Verify(VerifyRequest) returns (VerifyResponse);
+}

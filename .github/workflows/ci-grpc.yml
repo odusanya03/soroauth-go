@@ -1,0 +1,77 @@
+# gRPC service: schema lint, generated-code sync, and the parity suite.
+#
+# Runs when the service, its schema, or the library core it proves against
+# changes.
+name: ci / grpc
+
+on:
+  # Advisory checks do not run on pull requests. Only the two jobs the
+  # branch ruleset requires do, so a contributor sees two checks and not a
+  # wall of them. These run when the change reaches main, and can be run
+  # by hand from the Actions tab at any time.
+  push:
+    branches: [main]
+    paths:
+      - "integrations/grpc/**"
+      - "*.go"
+      - "go.mod"
+      - "go.sum"
+      - "internal/**"
+      - "remote/**"
+      - "server/**"
+      # A workflow's own definition is in its paths, so an edit to this
+      # file re-runs it. Without this line a change to this workflow
+      # cannot validate itself.
+      - ".github/workflows/ci-grpc.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  grpc:
+    name: grpc signing and verification service
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      # buf and the generation plugins are pinned, so the schema tooling
+      # is a named build like everything else it checks.
+      - name: install buf
+        run: |
+          curl -sSL -o /tmp/buf.tar.gz https://github.com/bufbuild/buf/releases/download/v1.57.2/buf-Linux-x86_64.tar.gz
+          tar xzf /tmp/buf.tar.gz -C /tmp
+          echo "/tmp/buf/bin" >> "$GITHUB_PATH"
+      - name: install the generation plugins
+        run: |
+          GOBIN="$PWD/.tools" go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.6
+          GOBIN="$PWD/.tools" go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.5.1
+          echo "$PWD/.tools" >> "$GITHUB_PATH"
+      - name: schema lint
+        working-directory: integrations/grpc
+        run: buf lint
+      # The generated code is committed, so regenerating it must be a
+      # no-op: a hand edit to gen/ fails here rather than drifting
+      # silently from the schema.
+      - name: generated code is in sync
+        working-directory: integrations/grpc
+        run: |
+          ./generate.sh
+          git diff --exit-code -- gen/
+      - name: gofmt
+        working-directory: integrations/grpc
+        run: |
+          unformatted="$(gofmt -l .)"
+          if [ -n "$unformatted" ]; then
+            echo "these files are not gofmt clean:"
+            echo "$unformatted"
+            exit 1
+          fi
+      - name: vet and test
+        working-directory: integrations/grpc
+        run: |
+          go vet ./...
+          go test -race ./...
