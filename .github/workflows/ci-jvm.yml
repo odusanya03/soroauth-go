@@ -1,0 +1,54 @@
+# JVM binding: golden replay, exceptions, loader selection, and the FFM
+# binding against a freshly built native library.
+#
+# Runs when the binding or the library core it proves against changes.
+name: ci / jvm
+
+on:
+  # Advisory checks do not run on pull requests. Only the two jobs the
+  # branch ruleset requires do, so a contributor sees two checks and not a
+  # wall of them. These run when the change reaches main, and can be run
+  # by hand from the Actions tab at any time.
+  push:
+    branches: [main]
+    paths:
+      - "bindings/jvm/**"
+      - "testdata/vectors/**"
+      - "testdata/gen/**"
+      # A workflow's own definition is in its paths, so an edit to this
+      # file re-runs it. Without this line a change to this workflow
+      # cannot validate itself.
+      - ".github/workflows/ci-jvm.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  jvm:
+    name: jvm binding and native selection
+    strategy:
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+        with:
+          go-version-file: go.mod
+          check-latest: true
+      # JDK 22 is the binding's stated minimum (FFM final, JEP 454), so
+      # the suite runs on the minimum rather than only the newest release.
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5
+        with:
+          distribution: temurin
+          java-version: "22"
+      # The native library is build output, never committed: each runner
+      # builds its own platform's library, so the FFM binding is exercised
+      # against a fresh binary on Linux and on macOS alike.
+      - name: build the native library
+        working-directory: bindings/jvm/native
+        run: ./build.sh
+      - name: golden replay and binding tests
+        working-directory: bindings/jvm
+        run: mvn -B test
